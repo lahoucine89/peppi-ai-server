@@ -3,7 +3,7 @@ import express from "express";
 const app = express();
 app.use(express.json());
 
-// ✅ Read key from Render Environment Variables
+// Read key from Render Environment Variables
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 app.get("/", (req, res) => {
@@ -38,7 +38,7 @@ app.post("/api/ai-chat", async (req, res) => {
             role: "system",
             content: [
               {
-                type: "text",
+                type: "input_text",
                 text:
                   "You are a helpful university study assistant inside a student app. Be concise and practical.",
               },
@@ -46,7 +46,12 @@ app.post("/api/ai-chat", async (req, res) => {
           },
           ...messages.map((m) => ({
             role: m.role,
-            content: [{ type: "text", text: String(m.content ?? "") }],
+            content: [
+              {
+                type: "input_text",
+                text: String(m.content ?? ""),
+              },
+            ],
           })),
         ],
       }),
@@ -69,7 +74,7 @@ app.post("/api/ai-chat", async (req, res) => {
   }
 });
 
-// ✅ Use Render’s port
+// Use Render’s port
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`AI server running on port ${PORT}`);
