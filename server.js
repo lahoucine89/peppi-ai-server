@@ -1,78 +1,87 @@
 import express from "express";
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+// ---- CORS (IMPORTANT for browser / Expo Web) ----
+app.use((req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Accept, Authorization, Bypass-Tunnel-Reminder, User-Agent"
+  );
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+});
+
+// ---- Ollama settings ----
+const OLLAMA_HOST = process.env.OLLAMA_HOST || "http://127.0.0.1:11434";
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "llama3.2";
 
 app.get("/", (req, res) => {
-  res.json({ status: "OK" });
+  res.send("OK");
 });
 
 app.post("/api/ai-chat", async (req, res) => {
   try {
-    if (!OPENAI_API_KEY) {
-      console.error("OPENAI_API_KEY missing");
-      return res.status(500).json({ error: "Missing OPENAI_API_KEY" });
-    }
-
     const { messages } = req.body;
 
     if (!Array.isArray(messages)) {
       return res.status(400).json({ error: "messages must be an array" });
     }
 
-    console.log("Incoming messages:", messages.length);
-
-    const openaiResponse = await fetch(
-      "https://api.openai.com/v1/responses",
+    // Convert your app messages -> Ollama chat format
+    const ollamaMessages = [
       {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${OPENAI_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: "gpt-4.1-mini",
-          input: messages.map((m) => ({
-            role: m.role,
-            content: [
-              {
-                type: "input_text",
-                text: String(m.content ?? ""),
-              },
-            ],
-          })),
-        }),
-      }
-    );
+        role: "system",
+        content:
+          "You are a helpful university study assistant inside a student app. Be concise and practical.",
+      },
+      ...messages.map((m) => ({
+        role: m.role === "assistant" ? "assistant" : "user",
+        content: String(m.content ?? ""),
+      })),
+    ];
 
-    const responseText = await openaiResponse.text();
+    // Call Ollama (local)
+    const r = await fetch(`${OLLAMA_HOST}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: OLLAMA_MODEL,
+        messages: ollamaMessages,
+        stream: false,
+      }),
+    });
 
-    if (!openaiResponse.ok) {
-      console.error("OpenAI error:", responseText);
-      return res.status(500).json({
-        error: "OpenAI request failed",
-        details: responseText,
-      });
+    const raw = await r.text();
+
+    if (!r.ok) {
+      console.error("Ollama error status:", r.status);
+      console.error("Ollama error body:", raw);
+      return res.status(500).send(raw);
     }
 
-    const data = JSON.parse(responseText);
+    let data;
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      return res.status(500).send("Ollama returned non-JSON response.");
+    }
 
     const reply =
-      data.output_text ||
-      data.output?.[0]?.content?.[0]?.text ||
-      "No reply.";
+      (data?.message?.content ?? "").trim() || "No reply from Ollama.";
 
     return res.json({ reply });
   } catch (err) {
-    console.error("SERVER CRASH:", err);
-    return res.status(500).json({ error: "Server error" });
+    console.error("AI error:", err);
+    return res.status(500).send("Server error");
   }
 });
 
 const PORT = process.env.PORT || 3000;
-
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`AI server running on port ${PORT}`);
+  console.log(`Using Ollama at ${OLLAMA_HOST} with model ${OLLAMA_MODEL}`);
 });
