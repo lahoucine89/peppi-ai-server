@@ -3,48 +3,38 @@ import express from "express";
 const app = express();
 app.use(express.json());
 
-// Read key from Render Environment Variables
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 app.get("/", (req, res) => {
-  res.send("OK");
+  res.json({ status: "OK" });
 });
 
 app.post("/api/ai-chat", async (req, res) => {
   try {
     if (!OPENAI_API_KEY) {
-      console.error("Missing OPENAI_API_KEY in environment variables.");
+      console.error("OPENAI_API_KEY missing");
       return res.status(500).json({ error: "Missing OPENAI_API_KEY" });
     }
 
     const { messages } = req.body;
 
-    console.log("Request received. Messages count:", messages?.length);
-
     if (!Array.isArray(messages)) {
-      return res.status(400).send("messages must be an array");
+      return res.status(400).json({ error: "messages must be an array" });
     }
 
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4.1-mini",
-        input: [
-          {
-            role: "system",
-            content: [
-              {
-                type: "input_text",
-                text:
-                  "You are a helpful university study assistant inside a student app. Be concise and practical.",
-              },
-            ],
-          },
-          ...messages.map((m) => ({
+    console.log("Incoming messages:", messages.length);
+
+    const openaiResponse = await fetch(
+      "https://api.openai.com/v1/responses",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4.1-mini",
+          input: messages.map((m) => ({
             role: m.role,
             content: [
               {
@@ -53,34 +43,36 @@ app.post("/api/ai-chat", async (req, res) => {
               },
             ],
           })),
-        ],
-      }),
-    });
+        }),
+      }
+    );
 
-    if (!response.ok) {
-      const txt = await response.text();
-      console.error("OpenAI error status:", response.status);
-      console.error("OpenAI error body:", txt);
-      return res.status(500).send(txt);
+    const responseText = await openaiResponse.text();
+
+    if (!openaiResponse.ok) {
+      console.error("OpenAI error:", responseText);
+      return res.status(500).json({
+        error: "OpenAI request failed",
+        details: responseText,
+      });
     }
 
-    const data = await response.json();
+    const data = JSON.parse(responseText);
 
     const reply =
-      (data.output_text ?? "").trim() ||
+      data.output_text ||
       data.output?.[0]?.content?.[0]?.text ||
       "No reply.";
 
     return res.json({ reply });
   } catch (err) {
-    console.error("AI error:", err);
-    return res.status(500).send("Server error");
+    console.error("SERVER CRASH:", err);
+    return res.status(500).json({ error: "Server error" });
   }
 });
 
-// Use Render’s port
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`AI server running on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
