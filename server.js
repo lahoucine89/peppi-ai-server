@@ -25,7 +25,7 @@ app.post("/api/ai-chat", async (req, res) => {
       return res.status(400).send("messages must be an array");
     }
 
-    const r = await fetch("https://api.openai.com/v1/responses", {
+    const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -57,15 +57,19 @@ app.post("/api/ai-chat", async (req, res) => {
       }),
     });
 
-    if (!r.ok) {
-      const txt = await r.text();
-      console.error("OpenAI error status:", r.status);
+    if (!response.ok) {
+      const txt = await response.text();
+      console.error("OpenAI error status:", response.status);
       console.error("OpenAI error body:", txt);
       return res.status(500).send(txt);
     }
 
-    const data = await r.json();
-    const reply = (data?.output_text ?? "").trim() || "No reply.";
+    const data = await response.json();
+
+    const reply =
+      (data.output_text ?? "").trim() ||
+      data.output?.[0]?.content?.[0]?.text ||
+      "No reply.";
 
     return res.json({ reply });
   } catch (err) {
@@ -76,6 +80,7 @@ app.post("/api/ai-chat", async (req, res) => {
 
 // Use Render’s port
 const PORT = process.env.PORT || 3000;
+
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`AI server running on port ${PORT}`);
 });
